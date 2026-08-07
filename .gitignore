@@ -18,6 +18,11 @@ dist/
 # Streamlit
 .streamlit/secrets.toml
 
+# Logs
+*.log
+streamlit_out.log
+streamlit_err.log
+
 # OS
 .DS_Store
 Thumbs.db

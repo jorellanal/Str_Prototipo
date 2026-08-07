@@ -20,17 +20,6 @@ def calcular_estado_cascada(
     """Calcula metricas y dataframes segun las fuentes cargadas."""
     total_pdi = len(df_pdi)
 
-
-def calcular_estado_cascada(
-    df_pdi: pd.DataFrame,
-    df_servel: pd.DataFrame,
-    df_fonasa: pd.DataFrame,
-    servel_cargado: bool,
-    fonasa_cargado: bool,
-) -> dict:
-    """Calcula metricas y dataframes segun las fuentes cargadas."""
-    total_pdi = len(df_pdi)
-
     df_servel_usado = df_servel if servel_cargado else df_servel.iloc[0:0]
     df_fonasa_usado = df_fonasa if fonasa_cargado else df_fonasa.iloc[0:0]
 
