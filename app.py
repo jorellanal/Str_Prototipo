@@ -11,7 +11,14 @@ import streamlit as st
 
 from modules.data import generar_base_pdi, generar_fonasa, generar_servel
 from modules.logic import calcular_estado_cascada, serializar_cascada
-from modules.style import COLOR_AZUL, COLOR_GRIS, COLOR_VERDE, aplicar_estilos
+from modules.style import (
+    COLOR_AZUL_CLARO,
+    COLOR_AZUL_IPS,
+    COLOR_GRIS,
+    COLOR_VERDE,
+    activar_tema_altair,
+    aplicar_estilos,
+)
 
 
 SEED_PDI = 42
@@ -54,9 +61,11 @@ def _render_sidebar() -> None:
         st.divider()
         st.markdown("**Carga de fuentes**")
 
-        pdi_ok = True
-        pdi_label = ":green[**PDI**] - cargada (1000 casos)"
-        st.markdown(pdi_label)
+        st.markdown(
+            "<span style='color:#2E7D32; font-weight:600;'>&#10004; PDI</span> "
+            f"<span style='color:#1A1A1A;'>cargada (1.000 casos)</span>",
+            unsafe_allow_html=True,
+        )
 
         st.button(
             "Cargar Archivo Servel",
@@ -67,7 +76,11 @@ def _render_sidebar() -> None:
             disabled=st.session_state.servel_cargado,
         )
         if st.session_state.servel_cargado:
-            st.caption(":white_check_mark: Servel cargado - 40% de los RUTs validados")
+            st.markdown(
+                "<small style='color:#2E7D32;'>&#10004; Servel cargado - "
+                "40% de los RUTs validados</small>",
+                unsafe_allow_html=True,
+            )
 
         st.button(
             "Cargar Archivo Fonasa",
@@ -78,8 +91,10 @@ def _render_sidebar() -> None:
             disabled=st.session_state.fonasa_cargado,
         )
         if st.session_state.fonasa_cargado:
-            st.caption(
-                ":white_check_mark: Fonasa cargado - 20% adicional de los RUTs validados"
+            st.markdown(
+                "<small style='color:#2E7D32;'>&#10004; Fonasa cargado - "
+                "20% adicional de los RUTs validados</small>",
+                unsafe_allow_html=True,
             )
 
         if st.button("Reiniciar simulacion", use_container_width=True):
@@ -88,7 +103,7 @@ def _render_sidebar() -> None:
             st.rerun()
 
         st.divider()
-        st.caption(f"Sprint 1 - Prototipo | Colores: {COLOR_AZUL} / {COLOR_GRIS}")
+        st.caption("Sprint 1 - Prototipo | Datos simulados")
 
 
 def _render_metrics(estado: dict) -> None:
@@ -128,7 +143,7 @@ def _render_waterfall(estado: dict) -> None:
 
     color_scale = alt.Scale(
         domain=["inicio", "reduccion", "pendiente"],
-        range=[COLOR_AZUL, COLOR_VERDE, COLOR_GRIS],
+        range=[COLOR_AZUL_IPS, COLOR_VERDE, COLOR_GRIS],
     )
 
     chart = (
@@ -155,6 +170,7 @@ def _render_waterfall(estado: dict) -> None:
             dy=-12,
             color="#1A1A1A",
             fontWeight="bold",
+            fontSize=13,
         )
         .encode(
             x=alt.X("Paso:N", sort=None),
@@ -221,6 +237,7 @@ def main() -> None:
         page_icon=":shield:",
         layout="wide",
     )
+    activar_tema_altair()
     aplicar_estilos()
     _init_state()
 
