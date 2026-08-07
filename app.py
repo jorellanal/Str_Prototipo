@@ -114,18 +114,18 @@ def _render_metrics(estado: dict) -> None:
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric(
-            label="Total Casos PDI",
+            label="Casos marcados por PDI",
             value=f"{estado['total_pdi']:,}",
-            help="Casos originales marcados por la PDI como fuera > 180 dias.",
+            help="Total inicial de beneficiarios que la PDI reporto fuera de Chile > 180 dias.",
         )
     with col2:
         delta = estado["rec_total"] if estado["rec_total"] > 0 else None
         st.metric(
-            label="Casos Validados (Presenciales)",
+            label="Confirmados en Chile",
             value=f"{estado['rec_total']:,}",
             delta=delta,
             delta_color="normal",
-            help="Beneficiarios cuya presencialidad en Chile fue confirmada.",
+            help="Beneficiarios cuya presencialidad fue confirmada por Servel o Fonasa.",
         )
     with col3:
         delta_pend = (
@@ -134,7 +134,7 @@ def _render_metrics(estado: dict) -> None:
             else None
         )
         st.metric(
-            label="Suspensiones Pendientes",
+            label="Aun quedan suspendidos",
             value=f"{estado['pendientes']:,}",
             delta=delta_pend,
             delta_color="inverse",
@@ -207,8 +207,8 @@ def _render_waterfall(estado: dict) -> None:
             title=alt.TitleParams(
                 text="Cascada de mitigacion de errores PGU",
                 subtitle=[
-                    "Barras = cambios | Azul = total inicial | Verde = recuperados | Gris = pendientes",
-                    "Lineas punteadas = flujo del acumulado | Numero inferior = total corriente",
+                    "Cuantos casos quedan con la PGU suspendida tras cada cruce.",
+                    "Azul = total inicial | Verde = recuperados | Gris = los que AUN quedan suspendidos.",
                 ],
                 fontSize=16,
                 color=COLOR_AZUL_IPS,

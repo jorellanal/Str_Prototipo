@@ -28,14 +28,19 @@ def calcular_estado_cascada(
     df_recuperados = pd.concat([df_servel_usado, df_fonasa_usado], ignore_index=True)
 
     pasos_cascada = [
-        {"paso": "PDI Original", "valor": total_pdi, "tipo": "inicio", "delta": 0},
+        {
+            "paso": "Casos PDI",
+            "valor": total_pdi,
+            "tipo": "inicio",
+            "delta": 0,
+        },
     ]
 
     acumulado = total_pdi
     if servel_cargado and rec_servel > 0:
         pasos_cascada.append(
             {
-                "paso": "Cruce Servel",
+                "paso": "Recuperados x Servel",
                 "valor": -rec_servel,
                 "tipo": "reduccion",
                 "delta": -rec_servel,
@@ -46,7 +51,7 @@ def calcular_estado_cascada(
     if fonasa_cargado and rec_fonasa > 0:
         pasos_cascada.append(
             {
-                "paso": "Cruce Fonasa",
+                "paso": "Recuperados x Fonasa",
                 "valor": -rec_fonasa,
                 "tipo": "reduccion",
                 "delta": -rec_fonasa,
@@ -56,7 +61,7 @@ def calcular_estado_cascada(
 
     pasos_cascada.append(
         {
-            "paso": "Pendientes",
+            "paso": "Aun suspendidos",
             "valor": max(acumulado, 0),
             "tipo": "pendiente",
             "delta": 0,
