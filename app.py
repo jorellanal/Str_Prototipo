@@ -10,7 +10,11 @@ import pandas as pd
 import streamlit as st
 
 from modules.data import generar_base_pdi, generar_fonasa, generar_servel
-from modules.logic import calcular_estado_cascada, serializar_cascada
+from modules.logic import (
+    calcular_estado_cascada,
+    serializar_cascada,
+    serializar_conectores,
+)
 from modules.style import (
     COLOR_AZUL_CLARO,
     COLOR_AZUL_IPS,
@@ -140,46 +144,82 @@ def _render_metrics(estado: dict) -> None:
 
 def _render_waterfall(estado: dict) -> None:
     df_cascada = serializar_cascada(estado["pasos_cascada"])
+    df_conectores = serializar_conectores(df_cascada)
 
     color_scale = alt.Scale(
         domain=["inicio", "reduccion", "pendiente"],
         range=[COLOR_AZUL_IPS, COLOR_VERDE, COLOR_GRIS],
     )
 
+    base = alt.Chart(df_cascada).encode(
+        x=alt.X("Paso:N", sort=None, title="Etapa del cruce")
+    )
+
+    barras = base.mark_bar(size=70).encode(
+        y=alt.Y("Inicio:Q", title="Casos"),
+        y2=alt.Y2("Fin:Q"),
+        color=alt.Color("Tipo:N", scale=color_scale, legend=None),
+        tooltip=[
+            alt.Tooltip("Paso:N", title="Etapa"),
+            alt.Tooltip("DeltaLabel:N", title="Variacion"),
+            alt.Tooltip("Acumulado:Q", title="Acumulado", format=","),
+        ],
+    )
+
+    conectores = (
+        alt.Chart(df_conectores)
+        .mark_rule(strokeDash=[5, 4], strokeWidth=1.5, color="#5F6B7A", opacity=0.7)
+        .encode(
+            x=alt.X("x:N", sort=None),
+            x2=alt.X2("x2:N"),
+            y=alt.Y("y:Q"),
+        )
+    )
+
+    label_delta = base.mark_text(
+        align="center",
+        baseline="bottom",
+        dy=-8,
+        color="#1A1A1A",
+        fontSize=13,
+        fontWeight="bold",
+    ).encode(
+        y=alt.Y("Fin:Q"),
+        text=alt.Text("DeltaLabel:N"),
+    )
+
+    label_acumulado = base.mark_text(
+        align="center",
+        baseline="top",
+        dy=4,
+        color=COLOR_AZUL_IPS,
+        fontSize=12,
+        fontWeight="bold",
+    ).encode(
+        y=alt.Y("Fin:Q"),
+        text=alt.Text("Acumulado:Q", format=","),
+    )
+
     chart = (
-        alt.Chart(df_cascada)
-        .mark_bar()
-        .encode(
-            x=alt.X("Paso:N", sort=None, title="Etapa del cruce"),
-            y=alt.Y("Inicio:Q", title="Casos"),
-            y2=alt.Y2("Fin:Q"),
-            color=alt.Color("Tipo:N", scale=color_scale, legend=None),
-            tooltip=[
-                alt.Tooltip("Paso:N"),
-                alt.Tooltip("Etiqueta:N", title="Variacion"),
-            ],
+        (conectores + barras + label_delta + label_acumulado)
+        .properties(
+            height=380,
+            title=alt.TitleParams(
+                text="Cascada de mitigacion de errores PGU",
+                subtitle=[
+                    "Barras = cambios | Azul = total inicial | Verde = recuperados | Gris = pendientes",
+                    "Lineas punteadas = flujo del acumulado | Numero inferior = total corriente",
+                ],
+                fontSize=16,
+                color=COLOR_AZUL_IPS,
+                subtitleFontSize=11,
+                subtitleColor="#5F6B7A",
+            ),
         )
-        .properties(height=360, title="Cascada de mitigacion de errores PGU")
+        .configure_axis(labelFontSize=11, titleFontSize=12)
     )
 
-    text = (
-        alt.Chart(df_cascada)
-        .mark_text(
-            align="center",
-            baseline="middle",
-            dy=-12,
-            color="#1A1A1A",
-            fontWeight="bold",
-            fontSize=13,
-        )
-        .encode(
-            x=alt.X("Paso:N", sort=None),
-            y=alt.Y("Fin:Q"),
-            text=alt.Text("Etiqueta:N"),
-        )
-    )
-
-    st.altair_chart(chart + text, use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
 
 
 def _render_tabla_recuperados(estado: dict) -> None:

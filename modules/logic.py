@@ -75,30 +75,65 @@ def calcular_estado_cascada(
 
 
 def serializar_cascada(pasos: list[dict]) -> pd.DataFrame:
-    """Convierte los pasos a un DataFrame apto para Altair waterfall."""
+    """Convierte los pasos a un DataFrame apto para Altair waterfall.
+
+    Columnas:
+      - Paso, Tipo, Inicio, Fin, Etiqueta
+      - Acumulado: total corriente al cierre del paso
+      - DeltaLabel: texto del delta (+N, -N, =N)
+    """
     rows = []
     acumulado = 0
     for p in pasos:
         if p["tipo"] == "inicio":
             base = 0
             top = p["valor"]
-            label = f"+{p['valor']:,}"
+            delta_label = f"+{p['valor']:,}"
         elif p["tipo"] == "reduccion":
             top = acumulado + p["valor"]
             base = acumulado
-            label = f"{p['valor']:,}"
+            delta_label = f"{p['valor']:,}"
         else:
             base = 0
             top = p["valor"]
-            label = f"={p['valor']:,}"
+            delta_label = f"={p['valor']:,}"
+
+        if p["tipo"] == "reduccion":
+            nuevo_acumulado = acumulado + p["valor"]
+        else:
+            nuevo_acumulado = top
+
         rows.append(
             {
                 "Paso": p["paso"],
                 "Tipo": p["tipo"],
                 "Inicio": base,
                 "Fin": top,
-                "Etiqueta": label,
+                "Etiqueta": delta_label,
+                "Acumulado": max(nuevo_acumulado, 0),
+                "DeltaLabel": delta_label,
             }
         )
-        acumulado = top if p["tipo"] != "reduccion" else acumulado + p["valor"]
+        acumulado = nuevo_acumulado
+
+    return pd.DataFrame(rows)
+
+
+def serializar_conectores(df_cascada: pd.DataFrame) -> pd.DataFrame:
+    """Genera lineas conectoras horizontales entre barras consecutivas.
+
+    Cada conector une el borde derecho de una barra con el izquierdo
+    de la siguiente, a la altura donde termina la primera (Fin).
+    """
+    rows = []
+    pasos = df_cascada["Paso"].tolist()
+    fins = df_cascada["Fin"].tolist()
+    for i in range(len(pasos) - 1):
+        rows.append(
+            {
+                "x": pasos[i],
+                "x2": pasos[i + 1],
+                "y": fins[i],
+            }
+        )
     return pd.DataFrame(rows)
