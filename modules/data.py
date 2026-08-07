@@ -100,7 +100,7 @@ def formatear_rut(numero: int) -> str:
 
 
 def generar_base_pdi(
-    n: int = 1000,
+    n: int = 13000,
     seed: int = 42,
     fecha_base: date | None = None,
 ) -> pd.DataFrame:
@@ -141,6 +141,7 @@ def generar_servel(
     """Selecciona un % de RUTs del PDI que aparecen con voto en Servel."""
     rng = np.random.default_rng(seed + 1)
     n = int(round(len(df_pdi) * pct))
+    n = min(n, len(df_pdi))
     indices = rng.choice(len(df_pdi), size=n, replace=False)
 
     base = df_pdi.iloc[indices][["RUT", "Nombre"]].reset_index(drop=True)

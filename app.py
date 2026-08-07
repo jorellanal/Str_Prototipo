@@ -28,6 +28,7 @@ from modules.style import (
 SEED_PDI = 42
 PCT_SERVEL = 0.40
 PCT_FONASA = 0.20
+N_RECHAZADOS_PDI = 13_000
 
 
 def _init_state() -> None:
@@ -37,7 +38,7 @@ def _init_state() -> None:
         st.session_state.fonasa_cargado = False
     if "data_loaded" not in st.session_state:
         with st.spinner("Cargando base PDI..."):
-            df_pdi = generar_base_pdi(n=1000, seed=SEED_PDI)
+            df_pdi = generar_base_pdi(n=N_RECHAZADOS_PDI, seed=SEED_PDI)
             df_servel = generar_servel(df_pdi, pct=PCT_SERVEL, seed=SEED_PDI)
             df_fonasa = generar_fonasa(
                 df_pdi, df_servel, pct=PCT_FONASA, seed=SEED_PDI
@@ -56,10 +57,10 @@ def _render_sidebar() -> None:
 
         st.markdown("**Contexto - Crisis PGU/PDI**")
         st.caption(
-            "Cruce de la PDI marco a 13.000 pensionados como residentes en "
-            "el extranjero por mas de 180 dias, suspendiendo la PGU. "
-            "Esta herramienta demuestra como validar cada caso con "
-            "fuentes alternativas."
+            "El IPS paga PGU a 2.200.000 pensionados. La PDI informo que "
+            "13.000 estaban fuera de Chile por mas de 180 dias y la PGU "
+            "les fue suspendida. Esta herramienta demuestra como el cruce "
+            "con fuentes alternativas reduce esos rechazos."
         )
 
         st.divider()
@@ -67,7 +68,8 @@ def _render_sidebar() -> None:
 
         st.markdown(
             "<span style='color:#2E7D32; font-weight:600;'>&#10004; PDI</span> "
-            f"<span style='color:#1A1A1A;'>cargada (1.000 casos)</span>",
+            f"<span style='color:#1A1A1A;'>cargada "
+            f"({N_RECHAZADOS_PDI:,} casos rechazados)</span>",
             unsafe_allow_html=True,
         )
 
@@ -82,7 +84,7 @@ def _render_sidebar() -> None:
         if st.session_state.servel_cargado:
             st.markdown(
                 "<small style='color:#2E7D32;'>&#10004; Servel cargado - "
-                "40% de los RUTs validados</small>",
+                "40% de los rechazados tenian voto en Chile</small>",
                 unsafe_allow_html=True,
             )
 
@@ -97,7 +99,7 @@ def _render_sidebar() -> None:
         if st.session_state.fonasa_cargado:
             st.markdown(
                 "<small style='color:#2E7D32;'>&#10004; Fonasa cargado - "
-                "20% adicional de los RUTs validados</small>",
+                "20% adicional de los rechazados tuvieron atencion medica</small>",
                 unsafe_allow_html=True,
             )
 
@@ -110,22 +112,51 @@ def _render_sidebar() -> None:
         st.caption("Sprint 1 - Prototipo | Datos simulados")
 
 
+def _render_banner_universo(estado: dict) -> None:
+    universo = estado["universo_pgu"]
+    rechazados = estado["total_pdi"]
+    tasa = (rechazados / universo) * 100 if universo else 0
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(90deg, #003B71 0%, #1F5DA8 100%);
+            color: #FFFFFF;
+            padding: 14px 22px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            border-left: 6px solid #2E7D32;
+        ">
+            <div style="font-size: 0.95rem; font-weight: 600; opacity: 0.9;">
+                UNIVERSO PGU
+            </div>
+            <div style="font-size: 1.5rem; font-weight: 700; margin-top: 4px;">
+                {universo:,} beneficiarios
+                <span style="font-size: 1rem; font-weight: 500; opacity: 0.85; margin-left: 12px;">
+                    | Tasa de error PDI: {tasa:.2f}%
+                </span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _render_metrics(estado: dict) -> None:
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric(
-            label="Casos marcados por PDI",
+            label="Rechazados por PDI (inicial)",
             value=f"{estado['total_pdi']:,}",
-            help="Total inicial de beneficiarios que la PDI reporto fuera de Chile > 180 dias.",
+            help="Casos que la PDI marco fuera de Chile > 180 dias y se les suspendio la PGU.",
         )
     with col2:
         delta = estado["rec_total"] if estado["rec_total"] > 0 else None
         st.metric(
-            label="Confirmados en Chile",
+            label="Recuperados (en Chile)",
             value=f"{estado['rec_total']:,}",
             delta=delta,
             delta_color="normal",
-            help="Beneficiarios cuya presencialidad fue confirmada por Servel o Fonasa.",
+            help="Beneficiarios cuya PGU debe rehabilitarse porque estaban en Chile.",
         )
     with col3:
         delta_pend = (
@@ -134,11 +165,11 @@ def _render_metrics(estado: dict) -> None:
             else None
         )
         st.metric(
-            label="Aun quedan suspendidos",
+            label="Aun suspendidos (erroneamente)",
             value=f"{estado['pendientes']:,}",
             delta=delta_pend,
             delta_color="inverse",
-            help="Casos que siguen con la suspension de PGU tras los cruces.",
+            help="Casos donde la suspension de PGU se mantiene (sin cruce que lo refute).",
         )
 
 
@@ -298,16 +329,17 @@ def main() -> None:
         fonasa_cargado=st.session_state.fonasa_cargado,
     )
 
+    _render_banner_universo(estado)
     _render_metrics(estado)
     st.divider()
     _render_alerts(estado)
 
     col_chart, col_table = st.columns([3, 2])
     with col_chart:
-        st.markdown("##### Cascada de mitigacion")
+        st.markdown("##### Cascada: como se reduce el rechazo erroneo de PDI")
         _render_waterfall(estado)
     with col_table:
-        st.markdown("##### Beneficiarios validados")
+        st.markdown("##### Beneficiarios a rehabilitar (PGU)")
         _render_tabla_recuperados(estado)
 
     st.divider()

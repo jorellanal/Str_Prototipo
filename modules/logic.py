@@ -7,6 +7,20 @@ las fuentes alternativas que se hayan "cargado" en la sesion.
 import pandas as pd
 
 
+UNIVERSO_PGU = 2_200_000
+
+
+def calcular_estado_cascada(
+    df_pdi: pd.DataFrame,
+    df_servel: pd.DataFrame,
+    df_fonasa: pd.DataFrame,
+    servel_cargado: bool,
+    fonasa_cargado: bool,
+) -> dict:
+    """Calcula metricas y dataframes segun las fuentes cargadas."""
+    total_pdi = len(df_pdi)
+
+
 def calcular_estado_cascada(
     df_pdi: pd.DataFrame,
     df_servel: pd.DataFrame,
@@ -69,6 +83,7 @@ def calcular_estado_cascada(
     )
 
     return {
+        "universo_pgu": UNIVERSO_PGU,
         "total_pdi": total_pdi,
         "rec_servel": rec_servel,
         "rec_fonasa": rec_fonasa,

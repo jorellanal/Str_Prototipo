@@ -14,17 +14,18 @@ def main() -> None:
     for n in [11111111, 12345678, 20000000, 10000000, 19000000]:
         print(f"  {n} -> {formatear_rut(n)}")
 
-    df_pdi = generar_base_pdi(n=1000)
+    df_pdi = generar_base_pdi(n=13000)
     df_servel = generar_servel(df_pdi, pct=0.40)
     df_fonasa = generar_fonasa(df_pdi, df_servel, pct=0.20)
 
     print("\n=== DataFrames generados ===")
-    print(f"PDI: {len(df_pdi)} filas")
+    print(f"Universo PGU: 2.200.000 (referencia)")
+    print(f"PDI rechazados: {len(df_pdi):,}")
     print(f"  Ejemplo: {df_pdi.iloc[0]['RUT']} | {df_pdi.iloc[0]['Nombre']}")
     print(f"  Dias fuera: {df_pdi.iloc[0]['Dias_Fuera']}")
-    print(f"Servel: {len(df_servel)} filas")
+    print(f"Servel recupera: {len(df_servel):,} (40% de rechazados)")
     print(f"  Ejemplo: {df_servel.iloc[0]['RUT']} | {df_servel.iloc[0]['Detalle']}")
-    print(f"Fonasa: {len(df_fonasa)} filas")
+    print(f"Fonasa recupera adicional: {len(df_fonasa):,} (20% adicional)")
     print(f"  Ejemplo: {df_fonasa.iloc[0]['RUT']} | {df_fonasa.iloc[0]['Detalle']}")
 
     overlap = set(df_servel["RUT"]) & set(df_fonasa["RUT"])
