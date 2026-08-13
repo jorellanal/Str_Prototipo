@@ -79,6 +79,134 @@ ESPECIALIDADES_FONASA = [
     "Control oftalmologico",
 ]
 
+SUCURSALES_BANCOESTADO = [
+    "Sucursal Ahumada", "Sucursal Plaza Norte", "Sucursal Maipu",
+    "Sucursal La Florida", "Sucursal Puente Alto", "Sucursal San Bernardo",
+    "Sucursal Maipu Express", "Cajero Auto Servicio Plaza Oeste",
+    "Sucursal Quilicura", "Sucursal Estacion Central", "Sucursal Quinta Normal",
+    "Sucursal San Miguel",
+]
+
+CANALES_BANCOESTADO = [
+    "Cajero automatico", "Ventanilla", "Caja Vecina", "App BancoEstado",
+]
+
+DIGITOS_DV_VALIDOS = "0123456789K"
+
+
+def _normalizar_rut(rut: str) -> str:
+    """Quita puntos, espacios y guion; devuelve mayusculas."""
+    return rut.replace(".", "").replace(" ", "").replace("-", "").strip().upper()
+
+
+def validar_rut(rut: str) -> bool:
+    """Valida que el digito verificador de un RUT chileno sea correcto.
+
+    Acepta formatos:
+      - 12345678-9
+      - 12.345.678-9
+      - 12345678K
+      - 123456789 (9 digitos, DV al final)
+
+    Regla: modulo 11 sobre el cuerpo numerico, comparando contra el DV
+    reportado. Si el cuerpo no es numerico o el DV no esta en
+    {0-9, K}, retorna False.
+    """
+    limpio = _normalizar_rut(rut)
+    if len(limpio) < 2:
+        return False
+    dv_reportado = limpio[-1]
+    cuerpo = limpio[:-1]
+    if dv_reportado not in DIGITOS_DV_VALIDOS:
+        return False
+    if not cuerpo.isdigit():
+        return False
+    try:
+        numero = int(cuerpo)
+    except ValueError:
+        return False
+    return calcular_dv(numero) == dv_reportado
+
+
+def inyectar_ruts_invalidos(
+    df_pdi: pd.DataFrame,
+    pct: float = 0.05,
+    seed: int = 99,
+) -> pd.DataFrame:
+    """Devuelve una copia del DataFrame con un % de RUTs modificados
+    para tener DV incorrecto. Simula 'Data Sucia' en el origen PDI.
+    """
+    df = df_pdi.copy()
+    rng = np.random.default_rng(seed)
+    n = int(round(len(df) * pct))
+    n = min(n, len(df))
+    if n == 0:
+        return df
+    indices = rng.choice(len(df), size=n, replace=False)
+    for idx in indices:
+        rut_actual = df.at[idx, "RUT"]
+        cuerpo, _, dv_actual = rut_actual.partition("-")
+        dv_correcto = calcular_dv(int(cuerpo.replace(".", "")))
+        candidatos = [d for d in DIGITOS_DV_VALIDOS if d != dv_correcto]
+        dv_invalido = candidatos[int(rng.integers(0, len(candidatos)))]
+        numero = int(cuerpo.replace(".", ""))
+        df.at[idx, "RUT"] = formatear_rut(numero)[:-1] + dv_invalido
+    return df
+
+
+def detectar_ruts_invalidos(df: pd.DataFrame) -> pd.DataFrame:
+    """Retorna un sub-DataFrame con los RUTs cuyo DV no valida."""
+    mascara = ~df["RUT"].apply(validar_rut)
+    return df[mascara].copy()
+
+
+def generar_bancoestado(
+    df_pdi: pd.DataFrame,
+    df_servel: pd.DataFrame,
+    df_fonasa: pd.DataFrame,
+    pct: float = 0.15,
+    seed: int = 43,
+) -> pd.DataFrame:
+    """Selecciona un % ADICIONAL de RUTs del PDI (excluyendo Servel y
+    Fonasa) con giro presencial en BancoEstado posterior al reporte PDI.
+
+    Esquema alineado a generar_servel/generar_fonasa para que la cascada
+    pueda concatenarlos sin transformaciones.
+    """
+    rng = np.random.default_rng(seed)
+    ruts_ya_validados = set(df_servel["RUT"].tolist()) | set(df_fonasa["RUT"].tolist())
+    df_disponibles = df_pdi[~df_pdi["RUT"].isin(ruts_ya_validados)].reset_index(drop=True)
+
+    n = int(round(len(df_pdi) * pct))
+    n = min(n, len(df_disponibles))
+    if n == 0:
+        return pd.DataFrame(
+            columns=["RUT", "Nombre", "Fuente", "Fecha_Validacion", "Detalle"]
+        )
+
+    indices = rng.choice(len(df_disponibles), size=n, replace=False)
+    base = df_disponibles.iloc[indices][["RUT", "Nombre"]].reset_index(drop=True)
+    sucursales = rng.choice(SUCURSALES_BANCOESTADO, size=n)
+    canales = rng.choice(CANALES_BANCOESTADO, size=n)
+    montos = rng.integers(low=50_000, high=350_000, size=n)
+    fechas_giro = [
+        (date(2026, 1, 20) - timedelta(days=int(rng.integers(0, 120)))).isoformat()
+        for _ in range(n)
+    ]
+
+    return pd.DataFrame(
+        {
+            "RUT": base["RUT"],
+            "Nombre": base["Nombre"],
+            "Fuente": "BancoEstado",
+            "Fecha_Validacion": fechas_giro,
+            "Detalle": [
+                f"Giro ${int(m):,} - {suc} ({can})"
+                for m, suc, can in zip(montos, sucursales, canales)
+            ],
+        }
+    )
+
 
 def calcular_dv(numero: int) -> str:
     """Calcula el digito verificador de un RUT chileno (modulo 11)."""
