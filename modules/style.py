@@ -7,7 +7,7 @@ sobreescribir el tema por defecto con la paleta institucional.
 import altair as alt
 
 
-COLOR_AZUL_IPS = "#003B71"
+COLOR_AZUL_IPS = "#003366"
 COLOR_AZUL_CLARO = "#1F5DA8"
 COLOR_AZUL_FONDO = "#EEF2F7"
 COLOR_VERDE = "#2E7D32"
