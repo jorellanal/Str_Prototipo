@@ -27,3 +27,9 @@ streamlit_err.log
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Scripts temporales de prueba (prefijo _)
+_*.py
+_*.ps1
+_*.bat
+_*.sh
