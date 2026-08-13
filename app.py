@@ -1,19 +1,42 @@
 """SVP-IPS - Dashboard de Validacion de Presencialidad PGU.
 
 Prototipo que demuestra como el cruce de datos entre PDI y fuentes
-alternativas (Servel, Fonasa) reduce el numero de suspensiones
-indebidas de la PGU.
+alternativas (Servel, Fonasa, BancoEstado) reduce el numero de
+suspensiones indebidas de la PGU.
+
+Sprint 2:
+  - 3 fuentes de cruce + validacion DV de RUTs.
+  - 4 metricas ejecutivas (% mitigacion, monto fiscal protegido).
+  - Tabs Dashboard / Log de Auditoria / Vision Ciudadana.
+  - Log exportable a CSV para la Contraloria.
 """
+
+import io
+from datetime import datetime
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-from modules.data import generar_base_pdi, generar_fonasa, generar_servel
+from modules.data import (
+    detectar_ruts_invalidos,
+    formatear_rut,
+    generar_base_pdi,
+    generar_bancoestado,
+    generar_fonasa,
+    generar_servel,
+    inyectar_ruts_invalidos,
+    validar_rut,
+)
 from modules.logic import (
+    MONTO_PGU_MENSUAL,
+    UNIVERSO_PGU,
     calcular_estado_cascada,
+    calcular_metricas_sprint2,
+    generar_log_auditoria,
     serializar_cascada,
     serializar_conectores,
+    serializar_stacked_bar,
 )
 from modules.style import (
     COLOR_AZUL_CLARO,
@@ -23,12 +46,15 @@ from modules.style import (
     activar_tema_altair,
     aplicar_estilos,
 )
-from modules.logic import UNIVERSO_PGU
 
 
 SEED_PDI = 42
+SEED_BANCOESTADO = 43
+SEED_RUTS_INVALIDOS = 99
 PCT_SERVEL = 0.40
 PCT_FONASA = 0.20
+PCT_BANCOESTADO = 0.15
+PCT_RUTS_INVALIDOS = 0.05
 N_RECHAZADOS_PDI = 13_000
 
 
@@ -37,16 +63,31 @@ def _init_state() -> None:
         st.session_state.servel_cargado = False
     if "fonasa_cargado" not in st.session_state:
         st.session_state.fonasa_cargado = False
+    if "bancoestado_cargado" not in st.session_state:
+        st.session_state.bancoestado_cargado = False
     if "data_loaded" not in st.session_state:
         with st.spinner("Cargando base PDI..."):
-            df_pdi = generar_base_pdi(n=N_RECHAZADOS_PDI, seed=SEED_PDI)
-            df_servel = generar_servel(df_pdi, pct=PCT_SERVEL, seed=SEED_PDI)
-            df_fonasa = generar_fonasa(
-                df_pdi, df_servel, pct=PCT_FONASA, seed=SEED_PDI
+            df_pdi_limpio = generar_base_pdi(n=N_RECHAZADOS_PDI, seed=SEED_PDI)
+            df_pdi = inyectar_ruts_invalidos(
+                df_pdi_limpio, pct=PCT_RUTS_INVALIDOS, seed=SEED_RUTS_INVALIDOS
             )
+            df_servel = generar_servel(df_pdi, pct=PCT_SERVEL, seed=SEED_PDI)
+            df_fonasa = generar_fonasa(df_pdi, df_servel, pct=PCT_FONASA, seed=SEED_PDI)
+            df_bancoestado = generar_bancoestado(
+                df_pdi,
+                df_servel,
+                df_fonasa,
+                pct=PCT_BANCOESTADO,
+                seed=SEED_BANCOESTADO,
+            )
+            df_invalidos = detectar_ruts_invalidos(df_pdi)
+
             st.session_state.df_pdi = df_pdi
+            st.session_state.df_pdi_limpio = df_pdi_limpio
             st.session_state.df_servel = df_servel
             st.session_state.df_fonasa = df_fonasa
+            st.session_state.df_bancoestado = df_bancoestado
+            st.session_state.df_invalidos = df_invalidos
             st.session_state.data_loaded = True
 
 
@@ -73,6 +114,12 @@ def _render_sidebar() -> None:
             f"({N_RECHAZADOS_PDI:,} casos reportados)</span>",
             unsafe_allow_html=True,
         )
+        inv = st.session_state.df_invalidos
+        if len(inv) > 0:
+            st.caption(
+                f"Data Sucia detectada: {len(inv):,} RUTs con DV invalido "
+                f"({PCT_RUTS_INVALIDOS * 100:.0f}% del origen PDI)."
+            )
 
         st.button(
             "Cargar Archivo Servel",
@@ -104,13 +151,29 @@ def _render_sidebar() -> None:
                 unsafe_allow_html=True,
             )
 
+        st.button(
+            "Cargar Archivo BancoEstado",
+            key="btn_bancoestado",
+            type="primary",
+            use_container_width=True,
+            on_click=lambda: st.session_state.__setitem__("bancoestado_cargado", True),
+            disabled=st.session_state.bancoestado_cargado,
+        )
+        if st.session_state.bancoestado_cargado:
+            st.markdown(
+                "<small style='color:#2E7D32;'>&#10004; BancoEstado cargado - "
+                "15% adicional registra giro presencial en sucursal/cajero</small>",
+                unsafe_allow_html=True,
+            )
+
         if st.button("Reiniciar simulacion", use_container_width=True):
             st.session_state.servel_cargado = False
             st.session_state.fonasa_cargado = False
+            st.session_state.bancoestado_cargado = False
             st.rerun()
 
         st.divider()
-        st.caption("Sprint 1 - Prototipo | Datos simulados")
+        st.caption("Sprint 2 - Prototipo | Datos simulados")
 
 
 def _render_banner_universo(estado: dict) -> None:
@@ -119,12 +182,12 @@ def _render_banner_universo(estado: dict) -> None:
     st.markdown(
         f"""
         <div style="
-            background: linear-gradient(90deg, #003B71 0%, #1F5DA8 100%);
+            background: linear-gradient(90deg, {COLOR_AZUL_IPS} 0%, {COLOR_AZUL_CLARO} 100%);
             color: #FFFFFF;
             padding: 14px 22px;
             border-radius: 8px;
             margin-bottom: 16px;
-            border-left: 6px solid #2E7D32;
+            border-left: 6px solid {COLOR_VERDE};
         ">
             <div style="font-size: 0.95rem; font-weight: 600; opacity: 0.9;">
                 UNIVERSO PGU
@@ -141,36 +204,101 @@ def _render_banner_universo(estado: dict) -> None:
     )
 
 
-def _render_metrics(estado: dict) -> None:
-    total_pdi = estado.get("total_pdi", 0)
-    rec_total = estado.get("rec_total", 0)
-    pendientes = estado.get("pendientes", 0)
+def _render_metricas_sprint2(metricas: dict) -> None:
+    total = metricas["total_afectados"]
+    recuperados = metricas["recuperados"]
+    pct = metricas["pct_mitigacion"]
+    monto = metricas["monto_fiscal_protegido"]
+    invalidos = metricas["ruts_invalidos_pdi"]
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric(
-            label="Reportados por PDI",
-            value=f"{total_pdi:,}",
+            label="Total Afectados PDI",
+            value=f"{total:,}",
             help="Casos que la PDI marco fuera de Chile > 180 dias y a los que se les suspendio la PGU.",
         )
     with col2:
-        delta = rec_total if rec_total > 0 else None
         st.metric(
-            label="Recuperados (en Chile)",
-            value=f"{rec_total:,}",
-            delta=delta,
+            label="Casos Recuperados",
+            value=f"{recuperados:,}",
+            delta=recuperados if recuperados > 0 else None,
             delta_color="normal",
-            help="Beneficiarios cuya presencia en Chile fue confirmada por Servel o Fonasa.",
+            help="Beneficiarios cuya presencia en Chile fue confirmada por Servel, Fonasa o BancoEstado.",
         )
     with col3:
-        delta_pend = pendientes - total_pdi if rec_total > 0 else None
         st.metric(
-            label="Aun suspendidos sin cruce",
-            value=f"{pendientes:,}",
-            delta=delta_pend,
-            delta_color="inverse",
-            help="Casos donde la suspension se mantiene porque ninguna fuente alternativa los desmintio. Algunos pueden ser errores de PDI sin datos disponibles; otros pueden estar legitimamente fuera.",
+            label="% Mitigacion de Error",
+            value=f"{pct:.1f}%",
+            delta=f"{pct:.1f}%" if pct > 0 else None,
+            delta_color="normal",
+            help="Porcentaje de los casos reportados por PDI que fueron revertidos con cruce de fuentes alternativas.",
         )
+    with col4:
+        st.metric(
+            label="Monto Fiscal Protegido",
+            value=f"CLP ${monto:,}",
+            delta=f"CLP ${monto:,}" if monto > 0 else None,
+            delta_color="normal",
+            help=f"Equivalente monetario de los beneficiarios reactivados (recuperados x ${MONTO_PGU_MENSUAL:,} PGU mensual).",
+        )
+
+    if invalidos > 0:
+        st.warning(
+            f"**Mitigacion de riesgo 'Data Sucia':** {invalidos:,} RUTs con "
+            f"DV invalido fueron detectados en la base de origen PDI y "
+            f"segunados para revision. Equivale al "
+            f"{invalidos / total * 100:.1f}% de los casos reportados."
+        )
+
+
+def _render_stacked_bar(estado: dict) -> None:
+    df = serializar_stacked_bar(estado)
+    if df["Casos"].sum() == 0:
+        st.info("Cargue al menos una fuente para ver la distribucion por institucion.")
+        return
+
+    color_scale = alt.Scale(
+        domain=["Servel", "Fonasa", "BancoEstado"],
+        range=["#1565C0", "#2E7D32", "#6A1B9A"],
+    )
+
+    chart = (
+        alt.Chart(df)
+        .mark_bar(cornerRadiusEnd=4)
+        .encode(
+            x=alt.X("Fuente:N", sort=None, title="Institucion"),
+            y=alt.Y("Casos:Q", title="Casos recuperados"),
+            color=alt.Color("Fuente:N", scale=color_scale, legend=None),
+            tooltip=[
+                alt.Tooltip("Fuente:N", title="Institucion"),
+                alt.Tooltip("Casos:Q", title="Casos", format=","),
+            ],
+        )
+        .properties(
+            height=300,
+            title=alt.TitleParams(
+                text="Recuperados por institucion",
+                subtitle="Distribucion de casos validados segun fuente alternativa.",
+                fontSize=14,
+                color=COLOR_AZUL_IPS,
+                subtitleFontSize=11,
+                subtitleColor="#5F6B7A",
+            ),
+        )
+    )
+
+    labels = (
+        alt.Chart(df)
+        .mark_text(align="center", baseline="bottom", dy=-4, fontWeight="bold")
+        .encode(
+            x=alt.X("Fuente:N", sort=None),
+            y=alt.Y("Casos:Q"),
+            text=alt.Text("Casos:Q", format=","),
+        )
+    )
+
+    st.altair_chart(chart + labels, use_container_width=True)
 
 
 def _render_waterfall(estado: dict) -> None:
@@ -260,12 +388,12 @@ def _render_waterfall(estado: dict) -> None:
 def _render_tabla_recuperados(estado: dict) -> None:
     df = estado.get("df_recuperados")
     if df is None or df.empty:
-        st.info("Aun no se han validado beneficiarios. Cargue Servel o Fonasa.")
+        st.info("Aun no se han validado beneficiarios. Cargue Servel, Fonasa o BancoEstado.")
         return
 
     filtro = st.multiselect(
         "Filtrar por fuente",
-        options=["Servel", "Fonasa"],
+        options=["Servel", "Fonasa", "BancoEstado"],
         default=list(df["Fuente"].unique()),
     )
     df_show = df[df["Fuente"].isin(filtro)].reset_index(drop=True)
@@ -298,13 +426,191 @@ def _render_alerts(estado: dict) -> None:
     if st.session_state.servel_cargado and estado.get("rec_servel", 0) > 0:
         st.success(
             f"Se recuperaron **{estado['rec_servel']:,}** beneficiarios "
-            f"vía **Servel** (votacion registrada en Chile)."
+            f"via **Servel** (votacion registrada en Chile)."
         )
     if st.session_state.fonasa_cargado and estado.get("rec_fonasa", 0) > 0:
         st.success(
             f"Se recuperaron **{estado['rec_fonasa']:,}** beneficiarios "
-            f"adicionales vía **Fonasa** (atencion medica en Chile)."
+            f"adicionales via **Fonasa** (atencion medica en Chile)."
         )
+    if st.session_state.bancoestado_cargado and estado.get("rec_bancoestado", 0) > 0:
+        st.success(
+            f"Se recuperaron **{estado['rec_bancoestado']:,}** beneficiarios "
+            f"adicionales via **BancoEstado** (giro presencial en sucursal/cajero)."
+        )
+
+
+def _render_tab_dashboard(estado: dict, metricas: dict) -> None:
+    _render_banner_universo(estado)
+    _render_metricas_sprint2(metricas)
+    st.divider()
+    _render_alerts(estado)
+
+    col_chart, col_table = st.columns([3, 2])
+    with col_chart:
+        st.markdown("##### Distribucion de recuperados por institucion")
+        _render_stacked_bar(estado)
+        st.markdown("##### Cascada: reduccion de la cifra de PDI tras los cruces")
+        _render_waterfall(estado)
+    with col_table:
+        st.markdown("##### Beneficiarios a rehabilitar (PGU)")
+        _render_tabla_recuperados(estado)
+
+
+def _render_tab_auditoria(estado: dict) -> None:
+    log = generar_log_auditoria(estado.get("df_recuperados"))
+    st.markdown("##### Log de Auditoria - Trazabilidad para la Contraloria")
+    st.caption(
+        "Cada fila corresponde a un beneficiario cuya presencia en Chile "
+        "fue confirmada. El ID de Transaccion es un hash SHA-256 truncated "
+        "que garantiza unicidad por (RUT, fuente, fecha)."
+    )
+
+    if log.empty:
+        st.info("Aun no se han validado beneficiarios.")
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fuentes_disp = sorted(log["Fuente de Validacion"].unique().tolist())
+        filtro_fuente = st.multiselect(
+            "Filtrar por fuente",
+            options=fuentes_disp,
+            default=fuentes_disp,
+        )
+    with col2:
+        st.metric("Total hitos registrados", f"{len(log):,}")
+
+    log_filtrado = log[log["Fuente de Validacion"].isin(filtro_fuente)].reset_index(drop=True)
+    st.dataframe(log_filtrado, use_container_width=True, height=460, hide_index=True)
+
+    csv_buffer = io.StringIO()
+    log_filtrado.to_csv(csv_buffer, index=False, encoding="utf-8")
+    csv_bytes = csv_buffer.getvalue().encode("utf-8")
+    st.download_button(
+        label="Descargar Reporte Contraloria (CSV)",
+        data=csv_bytes,
+        file_name="Reporte_Trazabilidad_Contraloria.csv",
+        mime="text/csv",
+        type="primary",
+        use_container_width=True,
+    )
+    st.caption(
+        f"Exporta {len(log_filtrado):,} hitos de validacion. "
+        f"Generado el {datetime.now().strftime('%Y-%m-%d %H:%M')}."
+    )
+
+
+def _render_tab_ciudadana(estado: dict) -> None:
+    st.markdown("##### Vision Ciudadana - Consulta de estado PGU")
+    st.caption(
+        "Simulacion de la consulta que un pensionado puede hacer sobre el "
+        "estado de su PGU tras un cruce de presencialidad exitoso."
+    )
+
+    df = estado.get("df_recuperados")
+    ruts_ejemplo = []
+    if df is not None and not df.empty:
+        ruts_ejemplo = df["RUT"].head(5).tolist()
+
+    col1, col2 = st.columns([2, 3])
+    with col1:
+        rut_input = st.text_input(
+            "Ingrese su RUT",
+            max_chars=12,
+            placeholder="12.345.678-5",
+            help="Formato con o sin puntos. Use DV 'K' si corresponde.",
+        )
+        es_valido = validar_rut(rut_input) if rut_input else False
+        if rut_input and not es_valido:
+            st.error("RUT invalido. Verifique formato y digito verificador.")
+        consultar = st.button(
+            "Consultar estado",
+            type="primary",
+            use_container_width=True,
+            disabled=not rut_input,
+        )
+    with col2:
+        if ruts_ejemplo:
+            st.caption("RUTs de prueba (recuperados):")
+            st.code("\n".join(ruts_ejemplo), language=None)
+
+    if not consultar or not es_valido:
+        return
+
+    if df is None or df.empty:
+        st.warning(
+            "El sistema aun no tiene beneficiarios validados. "
+            "Cargue al menos una fuente desde el panel lateral."
+        )
+        return
+
+    coincidencias = df[df["RUT"].apply(lambda r: _mismo_rut(r, rut_input))]
+    if coincidencias.empty:
+        st.markdown(
+            f"""
+            <div style="
+                background-color: #F4F6F9;
+                border-left: 4px solid {COLOR_GRIS};
+                padding: 16px;
+                border-radius: 6px;
+                margin-top: 8px;
+            ">
+                <div style="color: {COLOR_GRIS}; font-weight: 600; margin-bottom: 6px;">
+                    Sin registro de validacion
+                </div>
+                <div style="color: #1A1A1A;">
+                    Su RUT no registra validacion positiva en las fuentes
+                    alternativas. Si considera que la suspension es un error,
+                    contacte a la sucursal IPS mas cercana.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
+    fila = coincidencias.iloc[0]
+    fuente = fila["Fuente"]
+    fecha = fila["Fecha_Validacion"]
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
+            border-left: 6px solid {COLOR_VERDE};
+            padding: 18px 22px;
+            border-radius: 8px;
+            margin-top: 8px;
+            font-family: 'Segoe UI', sans-serif;
+            max-width: 540px;
+        ">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <span style="font-size: 1.2rem;">&#128241;</span>
+                <span style="font-weight: 700; color: {COLOR_AZUL_IPS};">
+                    SMS - Notificacion IPS
+                </span>
+            </div>
+            <div style="background-color: #FFFFFF; padding: 14px; border-radius: 6px;
+                        color: #1A1A1A; line-height: 1.5; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+                <strong>IPS Informa:</strong> Su PGU ha sido reactivada tras
+                validar su presencialidad via <strong>{fuente}</strong>
+                (Fecha del hito: {fecha}). Monto mensual protegido:
+                CLP ${MONTO_PGU_MENSUAL:,}.
+            </div>
+            <div style="font-size: 0.75rem; color: {COLOR_GRIS}; margin-top: 8px;">
+                ID Transaccion: {fila.get('ID de Transaccion', 'N/D')}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _mismo_rut(rut_base: str, rut_input: str) -> bool:
+    """Compara dos RUTs ignorando formato (puntos, guion, mayusculas)."""
+    def _norm(s: str) -> str:
+        return s.replace(".", "").replace(" ", "").replace("-", "").upper().strip()
+    return _norm(str(rut_base)) == _norm(rut_input)
 
 
 def main() -> None:
@@ -330,26 +636,27 @@ def main() -> None:
         df_pdi=st.session_state.df_pdi,
         df_servel=st.session_state.df_servel,
         df_fonasa=st.session_state.df_fonasa,
+        df_bancoestado=st.session_state.df_bancoestado,
         servel_cargado=st.session_state.servel_cargado,
         fonasa_cargado=st.session_state.fonasa_cargado,
+        bancoestado_cargado=st.session_state.bancoestado_cargado,
+        ruts_invalidos_pdi=len(st.session_state.df_invalidos),
     )
+    metricas = calcular_metricas_sprint2(estado)
 
-    _render_banner_universo(estado)
-    _render_metrics(estado)
-    st.divider()
-    _render_alerts(estado)
-
-    col_chart, col_table = st.columns([3, 2])
-    with col_chart:
-        st.markdown("##### Cascada: reduccion de la cifra de PDI tras los cruces")
-        _render_waterfall(estado)
-    with col_table:
-        st.markdown("##### Beneficiarios a rehabilitar (PGU)")
-        _render_tabla_recuperados(estado)
+    tab_dash, tab_audit, tab_ciud = st.tabs(
+        ["Dashboard", "Log de Auditoria", "Vision Ciudadana"]
+    )
+    with tab_dash:
+        _render_tab_dashboard(estado, metricas)
+    with tab_audit:
+        _render_tab_auditoria(estado)
+    with tab_ciud:
+        _render_tab_ciudadana(estado)
 
     st.divider()
     st.caption(
-        "Prototipo Sprint 1 | Datos simulados | "
+        "Prototipo Sprint 2 | Datos simulados | "
         "RUTs generados con DV modulo 11 (100% ficticios)"
     )
 
