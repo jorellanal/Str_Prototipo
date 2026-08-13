@@ -25,7 +25,9 @@ invalido en la base de origen ("Data Sucia").
 - Pandas >=2.3.3 / NumPy >=2.3.4
 - Altair >=6.0 (waterfall + stacked bar)
 
-## Instalacion (Windows / PowerShell)
+## Instalacion
+
+### Windows / PowerShell
 
 ```powershell
 # 1. Clonar
@@ -40,7 +42,22 @@ cd Str_Prototipo
 streamlit run app.py
 ```
 
+### Windows / cmd
+
+```cmd
+git clone https://github.com/jorellanal/Str_Prototipo.git
+cd Str_Prototipo
+setup.bat
+.venv\Scripts\activate.bat
+streamlit run app.py
+```
+
 > **No instales dependencias en el Python global.** Todo va dentro de `.venv/`.
+
+> **PowerShell:** si tenes Pester (u otro modulo) cargado, no escribas
+> solo `setup` — colisiona con el cmdlet `Setup` de Pester y obtendras
+> "The Setup command may only be used inside a Describe block". Usa
+> siempre `.\setup.ps1` con extension explicita.
 
 ## Estructura
 
@@ -49,7 +66,8 @@ Str_Prototipo/
 ├── app.py                 # Dashboard Streamlit (3 tabs)
 ├── smoke_test.py          # Asserts reproducibles (validacion de logica)
 ├── requirements.txt       # Dependencias pinneadas por minimo
-├── setup.ps1              # Bootstrap automatico del entorno
+├── setup.ps1              # Bootstrap automatico del entorno (PowerShell)
+├── setup.bat              # Bootstrap automatico del entorno (cmd)
 ├── .streamlit/
 │   └── config.toml        # Tema institucional (primaryColor, base, etc.)
 └── modules/
