@@ -20,7 +20,6 @@ import streamlit as st
 
 from modules.data import (
     detectar_ruts_invalidos,
-    formatear_rut,
     generar_base_pdi,
     generar_bancoestado,
     generar_fonasa,
@@ -30,16 +29,12 @@ from modules.data import (
 )
 from modules.logic import (
     MONTO_PGU_MENSUAL,
-    UNIVERSO_PGU,
     calcular_estado_cascada,
     calcular_metricas_sprint2,
     generar_log_auditoria,
-    serializar_cascada,
-    serializar_conectores,
     serializar_stacked_bar,
 )
 from modules.style import (
-    COLOR_AZUL_CLARO,
     COLOR_AZUL_IPS,
     COLOR_GRIS,
     COLOR_VERDE,
@@ -94,17 +89,7 @@ def _init_state() -> None:
 def _render_sidebar() -> None:
     with st.sidebar:
         st.markdown("### SVP-IPS")
-        st.caption("Sistema de Validacion de Presencialidad")
-        st.divider()
-
-        st.markdown("**Contexto - Cruce PGU/PDI**")
-        st.caption(
-            "El IPS paga PGU a 2.200.000 pensionados. La PDI reporto que "
-            "13.000 estaban fuera de Chile por mas de 180 dias, por lo que "
-            "se les suspendio la PGU. Esta herramienta demuestra como el "
-            "cruce con fuentes alternativas reduce esa cifra."
-        )
-
+        st.caption("2.200.000 pensionados · 13.000 suspendidos por PDI")
         st.divider()
         st.markdown("**Carga de fuentes**")
 
@@ -176,30 +161,19 @@ def _render_sidebar() -> None:
         st.caption("Sprint 2 - Prototipo | Datos simulados")
 
 
-def _render_banner_universo(estado: dict) -> None:
-    universo = estado.get("universo_pgu", UNIVERSO_PGU)
-    reportados = estado.get("total_pdi", 0)
+def _render_header_universo(estado: dict) -> None:
+    total = estado.get("total_pdi", 0)
+    rec = estado.get("rec_total", 0)
+    pct = (rec / total * 100) if total > 0 else 0
+    inv = estado.get("ruts_invalidos_pdi", 0)
     st.markdown(
-        f"""
-        <div style="
-            background: linear-gradient(90deg, {COLOR_AZUL_IPS} 0%, {COLOR_AZUL_CLARO} 100%);
-            color: #FFFFFF;
-            padding: 14px 22px;
-            border-radius: 8px;
-            margin-bottom: 16px;
-            border-left: 6px solid {COLOR_VERDE};
-        ">
-            <div style="font-size: 0.95rem; font-weight: 600; opacity: 0.9;">
-                UNIVERSO PGU
-            </div>
-            <div style="font-size: 1.5rem; font-weight: 700; margin-top: 4px;">
-                {universo:,} beneficiarios
-                <span style="font-size: 1rem; font-weight: 500; opacity: 0.85; margin-left: 12px;">
-                    | Casos reportados por PDI: {reportados:,}
-                </span>
-            </div>
-        </div>
-        """,
+        f"**{total:,} casos PDI** · **{rec:,} recuperados** · "
+        f"**{pct:.0f}% mitigación**"
+        + (
+            f"  <small style='color:{COLOR_GRIS};'>· Data Sucia: {inv:,} RUTs con DV inválido</small>"
+            if inv > 0
+            else ""
+        ),
         unsafe_allow_html=True,
     )
 
@@ -209,7 +183,6 @@ def _render_metricas_sprint2(metricas: dict) -> None:
     recuperados = metricas["recuperados"]
     pct = metricas["pct_mitigacion"]
     monto = metricas["monto_fiscal_protegido"]
-    invalidos = metricas["ruts_invalidos_pdi"]
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -241,14 +214,6 @@ def _render_metricas_sprint2(metricas: dict) -> None:
             delta=f"CLP ${monto:,}" if monto > 0 else None,
             delta_color="normal",
             help=f"Equivalente monetario de los beneficiarios reactivados (recuperados x ${MONTO_PGU_MENSUAL:,} PGU mensual).",
-        )
-
-    if invalidos > 0:
-        st.warning(
-            f"**Mitigacion de riesgo 'Data Sucia':** {invalidos:,} RUTs con "
-            f"DV invalido fueron detectados en la base de origen PDI y "
-            f"segunados para revision. Equivale al "
-            f"{invalidos / total * 100:.1f}% de los casos reportados."
         )
 
 
@@ -301,90 +266,6 @@ def _render_stacked_bar(estado: dict) -> None:
     st.altair_chart(chart + labels, use_container_width=True)
 
 
-def _render_waterfall(estado: dict) -> None:
-    pasos = estado.get("pasos_cascada") or []
-    df_cascada = serializar_cascada(pasos)
-    if df_cascada.empty:
-        st.info("Sin datos para mostrar la cascada.")
-        return
-    df_conectores = serializar_conectores(df_cascada)
-
-    color_scale = alt.Scale(
-        domain=["inicio", "reduccion", "pendiente"],
-        range=[COLOR_AZUL_IPS, COLOR_VERDE, COLOR_GRIS],
-    )
-
-    base = alt.Chart(df_cascada).encode(
-        x=alt.X("Paso:N", sort=None, title="Etapa del cruce")
-    )
-
-    barras = base.mark_bar(size=70).encode(
-        y=alt.Y("Inicio:Q", title="Casos"),
-        y2=alt.Y2("Fin:Q"),
-        color=alt.Color("Tipo:N", scale=color_scale, legend=None),
-        tooltip=[
-            alt.Tooltip("Paso:N", title="Etapa"),
-            alt.Tooltip("DeltaLabel:N", title="Variacion"),
-            alt.Tooltip("Acumulado:Q", title="Acumulado", format=","),
-        ],
-    )
-
-    conectores = (
-        alt.Chart(df_conectores)
-        .mark_rule(strokeDash=[5, 4], strokeWidth=1.5, color="#5F6B7A", opacity=0.7)
-        .encode(
-            x=alt.X("x:N", sort=None),
-            x2=alt.X2("x2:N"),
-            y=alt.Y("y:Q"),
-        )
-    )
-
-    label_delta = base.mark_text(
-        align="center",
-        baseline="bottom",
-        dy=-8,
-        color="#1A1A1A",
-        fontSize=13,
-        fontWeight="bold",
-    ).encode(
-        y=alt.Y("Fin:Q"),
-        text=alt.Text("DeltaLabel:N"),
-    )
-
-    label_acumulado = base.mark_text(
-        align="center",
-        baseline="top",
-        dy=4,
-        color=COLOR_AZUL_IPS,
-        fontSize=12,
-        fontWeight="bold",
-    ).encode(
-        y=alt.Y("Fin:Q"),
-        text=alt.Text("Acumulado:Q", format=","),
-    )
-
-    chart = (
-        (conectores + barras + label_delta + label_acumulado)
-        .properties(
-            height=380,
-            title=alt.TitleParams(
-                text="Cascada de cruce PGU/PDI",
-                subtitle=[
-                    "Cuantos casos siguen con la PGU suspendida tras cada cruce.",
-                    "Azul = reportados por PDI | Verde = confirmados en Chile | Gris = sin cruce.",
-                ],
-                fontSize=16,
-                color=COLOR_AZUL_IPS,
-                subtitleFontSize=11,
-                subtitleColor="#5F6B7A",
-            ),
-        )
-        .configure_axis(labelFontSize=11, titleFontSize=12)
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
 def _render_tabla_recuperados(estado: dict) -> None:
     df = estado.get("df_recuperados")
     if df is None or df.empty:
@@ -414,44 +295,14 @@ def _render_tabla_recuperados(estado: dict) -> None:
     st.caption(f"Mostrando {len(df_show):,} beneficiarios validados.")
 
 
-def _render_alerts(estado: dict) -> None:
-    rec_total = estado.get("rec_total", 0)
-    if rec_total == 0:
-        st.warning(
-            "Cargue **Servel** desde el panel lateral para iniciar la "
-            "recuperacion de beneficiarios."
-        )
-        return
-
-    if st.session_state.servel_cargado and estado.get("rec_servel", 0) > 0:
-        st.success(
-            f"Se recuperaron **{estado['rec_servel']:,}** beneficiarios "
-            f"via **Servel** (votacion registrada en Chile)."
-        )
-    if st.session_state.fonasa_cargado and estado.get("rec_fonasa", 0) > 0:
-        st.success(
-            f"Se recuperaron **{estado['rec_fonasa']:,}** beneficiarios "
-            f"adicionales via **Fonasa** (atencion medica en Chile)."
-        )
-    if st.session_state.bancoestado_cargado and estado.get("rec_bancoestado", 0) > 0:
-        st.success(
-            f"Se recuperaron **{estado['rec_bancoestado']:,}** beneficiarios "
-            f"adicionales via **BancoEstado** (giro presencial en sucursal/cajero)."
-        )
-
-
 def _render_tab_dashboard(estado: dict, metricas: dict) -> None:
-    _render_banner_universo(estado)
+    _render_header_universo(estado)
     _render_metricas_sprint2(metricas)
-    st.divider()
-    _render_alerts(estado)
 
     col_chart, col_table = st.columns([3, 2])
     with col_chart:
-        st.markdown("##### Distribucion de recuperados por institucion")
+        st.markdown("##### Recuperados por institucion")
         _render_stacked_bar(estado)
-        st.markdown("##### Cascada: reduccion de la cifra de PDI tras los cruces")
-        _render_waterfall(estado)
     with col_table:
         st.markdown("##### Beneficiarios a rehabilitar (PGU)")
         _render_tabla_recuperados(estado)
@@ -532,8 +383,9 @@ def _render_tab_ciudadana(estado: dict) -> None:
         )
     with col2:
         if ruts_ejemplo:
-            st.caption("RUTs de prueba (recuperados):")
-            st.code("\n".join(ruts_ejemplo), language=None)
+            st.caption(f"RUT de prueba: {ruts_ejemplo[0]} (ver lista completa en ⋯)")
+            with st.expander("Ver más RUTs de ejemplo"):
+                st.code("\n".join(ruts_ejemplo), language=None)
 
     if not consultar or not es_valido:
         return
