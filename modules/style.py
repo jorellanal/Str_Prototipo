@@ -49,16 +49,8 @@ def tema_altair() -> alt.theme.ThemeConfig:
 
 
 def activar_tema_altair() -> None:
-    """Registra y activa el tema institucional compatible con Altair 5/6."""
-    if hasattr(alt, "theme") and hasattr(alt.theme, "register"):
-        try:
-            alt.theme.register("svp_ips", tema_altair)
-            alt.theme.enable("svp_ips")
-            return
-        except TypeError:
-            pass
-    alt.themes.register("svp_ips", tema_altair)
-    alt.themes.enable("svp_ips")
+    """Registra y activa el tema institucional (API moderna de Altair 5.5+/6.x)."""
+    alt.theme.register("svp_ips", enable=True)(tema_altair)
 
 
 def aplicar_estilos() -> None:

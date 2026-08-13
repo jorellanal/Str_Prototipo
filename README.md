@@ -13,15 +13,15 @@ de mitigacion cruzando la PDI con fuentes alternativas:
 - **Servel** - registro de votacion (40% de los casos validados).
 - **Fonasa** - atenciones medicas presenciales (20% adicional).
 
-Resultado: el sistema reduce las supuestas suspensiones de **1.000** a
-**400** casos (60% de mitigacion).
+Resultado: el sistema reduce las supuestas suspensiones de **13.000** a
+**5.200** casos (60% de mitigacion).
 
 ## Stack
 
-- Python 3.12
-- Streamlit 1.61
-- Pandas 3.0 / NumPy 2.5
-- Altair 6.2 (waterfall chart)
+- Python 3.12 (3.13 / 3.14 soportados)
+- Streamlit >=1.52
+- Pandas >=2.3.3 / NumPy >=2.3.4
+- Altair >=6.0 (waterfall chart)
 
 ## Instalacion (Windows / PowerShell)
 
@@ -59,19 +59,25 @@ Str_Prototipo/
 
 1. Abrir la app (`streamlit run app.py`).
 2. En el sidebar, pulsar **Cargar Archivo Servel**.
-   - Metricas: 1000 / 400 / 600
-   - Cascada: -400 en verde
-   - Tabla: 400 beneficiarios validados
+   - Metricas: 13.000 / 5.200 / 7.800
+   - Cascada: -5.200 en verde
+   - Tabla: 5.200 beneficiarios validados
 3. Pulsar **Cargar Archivo Fonasa**.
-   - Metricas: 1000 / 600 / 400
-   - Cascada: -200 verde adicional
-   - Tabla: 600 beneficiarios validados
+   - Metricas: 13.000 / 7.800 / 5.200
+   - Cascada: -2.600 verde adicional
+   - Tabla: 7.800 beneficiarios validados
 
 ## Datos
 
 - **100% simulados.** RUTs con DV modulo 11 valido, nombres ficticios
   chilenos, fechas relativas al 20/01/2026.
 - `np.random.seed(42)` asegura que la demo es reproducible.
+
+## Despliegue en Streamlit Cloud
+
+La version de Python se fija en **Settings > Advanced settings > Python version**
+del panel de Streamlit Cloud (no usar `runtime.txt`, el archivo es ignorado).
+El stack declarado en `requirements.txt` es compatible con 3.12, 3.13 y 3.14.
 
 ## Sprint
 
