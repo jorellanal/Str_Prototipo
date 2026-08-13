@@ -527,7 +527,7 @@ def main() -> None:
     metricas = calcular_metricas_sprint2(estado)
 
     tab_dash, tab_audit, tab_ciud = st.tabs(
-        ["Dashboard", "Log de Auditoria", "Vision Ciudadana"]
+        ["📊 Dashboard", "📋 Log de Auditoría", "👤 Visión Ciudadana"]
     )
     with tab_dash:
         _render_tab_dashboard(estado, metricas)
