@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 
 from modules.data import (
+    calcular_dv,
     detectar_ruts_invalidos,
     generar_base_pdi,
     generar_bancoestado,
@@ -165,15 +166,9 @@ def _render_header_universo(estado: dict) -> None:
     total = estado.get("total_pdi", 0)
     rec = estado.get("rec_total", 0)
     pct = (rec / total * 100) if total > 0 else 0
-    inv = estado.get("ruts_invalidos_pdi", 0)
     st.markdown(
         f"**{total:,} casos PDI** · **{rec:,} recuperados** · "
-        f"**{pct:.0f}% mitigación**"
-        + (
-            f"  <small style='color:{COLOR_GRIS};'>· Data Sucia: {inv:,} RUTs con DV inválido</small>"
-            if inv > 0
-            else ""
-        ),
+        f"**{pct:.0f}% mitigación**",
         unsafe_allow_html=True,
     )
 
@@ -215,6 +210,76 @@ def _render_metricas_sprint2(metricas: dict) -> None:
             delta_color="normal",
             help=f"Equivalente monetario de los beneficiarios reactivados (recuperados x ${MONTO_PGU_MENSUAL:,} PGU mensual).",
         )
+
+
+def _dv_correcto_desde(rut: str) -> str:
+    """Extrae el DV correcto a partir de un RUT con formato 'XX.XXX.XXX-D'."""
+    limpio = rut.replace(".", "").replace(" ", "").replace("-", "").strip()
+    cuerpo = limpio[:-1]
+    try:
+        numero = int(cuerpo)
+    except ValueError:
+        return "N/D"
+    return calcular_dv(numero)
+
+
+def _render_calidad_datos(estado: dict, df_invalidos: pd.DataFrame) -> None:
+    """Visualiza el flujo de validacion DV: recibidos -> validos/invalidos
+    -> segregacion de los que fallan antes del cruce con fuentes.
+    """
+    total = estado.get("total_pdi", 0)
+    invalidos = estado.get("ruts_invalidos_pdi", 0)
+    validos = total - invalidos
+    pct_val = (validos / total * 100) if total > 0 else 0
+    pct_inv = (invalidos / total * 100) if total > 0 else 0
+
+    st.markdown("##### Calidad de Datos - Mitigacion de 'Data Sucia'")
+    st.caption(
+        f"De los {total:,} RUTs recibidos de PDI, se valida el digito "
+        f"verificador (algoritmo modulo 11). Los {invalidos:,} con DV "
+        f"invalido se segregan del flujo de cruce y se derivan a "
+        f"revision manual antes de aplicar la suspension."
+    )
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric(
+            "RUTs recibidos",
+            f"{total:,}",
+            help="Total de pensionados marcados por PDI como fuera de Chile > 180 dias.",
+        )
+    with c2:
+        st.metric(
+            "DV validos (al cruce)",
+            f"{validos:,}",
+            delta=f"{pct_val:.0f}% del total",
+            delta_color="normal",
+            help="Pasan la validacion DV modulo 11; participan en el cruce con fuentes alternativas.",
+        )
+    with c3:
+        st.metric(
+            "DV invalidos (segregados)",
+            f"{invalidos:,}",
+            delta=f"-{pct_inv:.0f}%",
+            delta_color="inverse",
+            help="Marcados para revision manual; NO participan del cruce automatico.",
+        )
+
+    if not df_invalidos.empty:
+        muestra = df_invalidos.head(5).copy().reset_index(drop=True)
+        muestra["DV Reportado"] = muestra["RUT"].apply(lambda r: r.split("-")[-1])
+        muestra["DV Correcto"] = muestra["RUT"].apply(_dv_correcto_desde)
+        muestra["Estado"] = "Segregado para revision"
+        st.dataframe(
+            muestra[["RUT", "Nombre", "DV Reportado", "DV Correcto", "Estado"]],
+            use_container_width=True,
+            hide_index=True,
+            height=235,
+        )
+        if invalidos > 5:
+            st.caption(
+                f"Mostrando 5 de {invalidos:,} RUTs invalidos detectados."
+            )
 
 
 def _render_stacked_bar(estado: dict) -> None:
@@ -269,6 +334,7 @@ def _render_stacked_bar(estado: dict) -> None:
 def _render_tab_dashboard(estado: dict, metricas: dict) -> None:
     _render_header_universo(estado)
     _render_metricas_sprint2(metricas)
+    _render_calidad_datos(estado, st.session_state.df_invalidos)
 
     st.markdown("##### Recuperados por institucion")
     _render_stacked_bar(estado)
@@ -330,36 +396,26 @@ def _render_tab_ciudadana(estado: dict) -> None:
     )
 
     df = estado.get("df_recuperados")
-    ruts_ejemplo = []
-    if df is not None and not df.empty:
-        ruts_ejemplo = df["RUT"].head(5).tolist()
 
-    col1, col2 = st.columns([2, 3])
-    with col1:
-        primer_rut = ""
-        if df is not None and not df.empty:
-            primer_rut = df["RUT"].iloc[0]
-        rut_input = st.text_input(
-            "Ingrese su RUT",
-            value=primer_rut,
-            max_chars=12,
-            placeholder="12.345.678-5",
-            help="Formato con o sin puntos. Use DV 'K' si corresponde.",
-        )
-        es_valido = validar_rut(rut_input) if rut_input else False
-        if rut_input and not es_valido:
-            st.error("RUT invalido. Verifique formato y digito verificador.")
-        consultar = st.button(
-            "Consultar estado",
-            type="primary",
-            use_container_width=True,
-            disabled=not rut_input,
-        )
-    with col2:
-        if ruts_ejemplo:
-            st.caption(f"RUT de prueba: {ruts_ejemplo[0]} (ver lista completa en ⋯)")
-            with st.expander("Ver más RUTs de ejemplo"):
-                st.code("\n".join(ruts_ejemplo), language=None)
+    primer_rut = ""
+    if df is not None and not df.empty:
+        primer_rut = df["RUT"].iloc[0]
+    rut_input = st.text_input(
+        "Ingrese su RUT",
+        value=primer_rut,
+        max_chars=12,
+        placeholder="12.345.678-5",
+        help="Formato con o sin puntos. Use DV 'K' si corresponde.",
+    )
+    es_valido = validar_rut(rut_input) if rut_input else False
+    if rut_input and not es_valido:
+        st.error("RUT invalido. Verifique formato y digito verificador.")
+    consultar = st.button(
+        "Consultar estado",
+        type="primary",
+        use_container_width=True,
+        disabled=not rut_input,
+    )
 
     if not consultar or not es_valido:
         return
