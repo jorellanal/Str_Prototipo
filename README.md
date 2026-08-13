@@ -12,16 +12,18 @@ de mitigacion cruzando la PDI con fuentes alternativas:
 
 - **Servel** - registro de votacion (40% de los casos validados).
 - **Fonasa** - atenciones medicas presenciales (20% adicional).
+- **BancoEstado** - giros presenciales en sucursal/cajero (15% adicional).
 
 Resultado: el sistema reduce las supuestas suspensiones de **13.000** a
-**5.200** casos (60% de mitigacion).
+**3.250** casos (75% de mitigacion). Ademas detecta ~650 RUTs con DV
+invalido en la base de origen ("Data Sucia").
 
 ## Stack
 
 - Python 3.12 (3.13 / 3.14 soportados)
 - Streamlit >=1.52
 - Pandas >=2.3.3 / NumPy >=2.3.4
-- Altair >=6.0 (waterfall chart)
+- Altair >=6.0 (waterfall + stacked bar)
 
 ## Instalacion (Windows / PowerShell)
 
@@ -44,34 +46,52 @@ streamlit run app.py
 
 ```
 Str_Prototipo/
-├── app.py                 # Dashboard Streamlit (UI)
+├── app.py                 # Dashboard Streamlit (3 tabs)
+├── smoke_test.py          # Asserts reproducibles (validacion de logica)
 ├── requirements.txt       # Dependencias pinneadas por minimo
 ├── setup.ps1              # Bootstrap automatico del entorno
-├── .gitignore
+├── .streamlit/
+│   └── config.toml        # Tema institucional (primaryColor, base, etc.)
 └── modules/
     ├── __init__.py
-    ├── data.py            # Generador RUTs (DV modulo 11) + DataFrames
-    ├── logic.py           # Cascada de mitigacion y metricas
-    └── style.py           # CSS institucional (azul #0033A0 / gris)
+    ├── data.py            # Generador RUTs (DV mod 11), 3 fuentes, inyeccion
+    │                      # de Data Sucia, validador DV
+    ├── logic.py           # Cascada 3-fuentes, metricas Sprint 2,
+    │                      # log de auditoria con ID de transaccion
+    └── style.py           # CSS institucional (azul #003366 / verde)
 ```
 
 ## Uso
 
 1. Abrir la app (`streamlit run app.py`).
 2. En el sidebar, pulsar **Cargar Archivo Servel**.
-   - Metricas: 13.000 / 5.200 / 7.800
+   - Metricas: 13.000 / 5.200 / 40% / CLP $1.164.800.000
    - Cascada: -5.200 en verde
    - Tabla: 5.200 beneficiarios validados
 3. Pulsar **Cargar Archivo Fonasa**.
-   - Metricas: 13.000 / 7.800 / 5.200
+   - Metricas: 13.000 / 7.800 / 60% / CLP $1.747.200.000
    - Cascada: -2.600 verde adicional
    - Tabla: 7.800 beneficiarios validados
+4. Pulsar **Cargar Archivo BancoEstado**.
+   - Metricas: 13.000 / 9.750 / 75% / CLP $2.184.000.000
+   - Cascada: -1.950 verde adicional
+   - Tabla: 9.750 beneficiarios validados
+
+El tab **Log de Auditoria** muestra la tabla completa con
+`RUT | Nombre | Fuente de Validacion | Fecha del Hito | ID de Transaccion`
+y permite descargar el CSV `Reporte_Trazabilidad_Contraloria.csv`.
+
+El tab **Vision Ciudadana** simula la consulta que haria un pensionado
+ingresando su RUT. Si fue validado, muestra un mensaje tipo SMS con la
+fuente y el monto reactivado.
 
 ## Datos
 
 - **100% simulados.** RUTs con DV modulo 11 valido, nombres ficticios
   chilenos, fechas relativas al 20/01/2026.
 - `np.random.seed(42)` asegura que la demo es reproducible.
+- El 5% de la base PDI se inyecta con DV corrupto para probar el modulo
+  de mitigacion de "Data Sucia".
 
 ## Despliegue en Streamlit Cloud
 
@@ -81,6 +101,10 @@ El stack declarado en `requirements.txt` es compatible con 3.12, 3.13 y 3.14.
 
 ## Sprint
 
-- **Sprint 1**: Maqueta visual y logica de cascada.
+- **Sprint 1**: Maqueta visual y logica de cascada (2 fuentes).
+- **Sprint 2**: Incremento funcional — tercera fuente (BancoEstado),
+  validacion DV de RUTs, 4 metricas ejecutivas (% mitigacion, monto
+  fiscal protegido), tab de auditoria con exporte CSV, tab de vision
+  ciudadana con SMS.
 - Proximos: conexion a APIs reales, automatizacion de reversion
   masiva de PGU, dashboard operativo para IPS.
