@@ -241,7 +241,7 @@ def _render_stacked_bar(estado: dict) -> None:
             ],
         )
         .properties(
-            height=300,
+            height=420,
             title=alt.TitleParams(
                 text="Recuperados por institucion",
                 subtitle="Distribucion de casos validados segun fuente alternativa.",
@@ -266,46 +266,16 @@ def _render_stacked_bar(estado: dict) -> None:
     st.altair_chart(chart + labels, use_container_width=True)
 
 
-def _render_tabla_recuperados(estado: dict) -> None:
-    df = estado.get("df_recuperados")
-    if df is None or df.empty:
-        st.info("Aun no se han validado beneficiarios. Cargue Servel, Fonasa o BancoEstado.")
-        return
-
-    filtro = st.multiselect(
-        "Filtrar por fuente",
-        options=["Servel", "Fonasa", "BancoEstado"],
-        default=list(df["Fuente"].unique()),
-    )
-    df_show = df[df["Fuente"].isin(filtro)].reset_index(drop=True)
-    st.dataframe(
-        df_show.rename(
-            columns={
-                "RUT": "RUT",
-                "Nombre": "Beneficiario",
-                "Fuente": "Fuente",
-                "Fecha_Validacion": "Fecha",
-                "Detalle": "Detalle",
-            }
-        ),
-        use_container_width=True,
-        height=380,
-        hide_index=True,
-    )
-    st.caption(f"Mostrando {len(df_show):,} beneficiarios validados.")
-
-
 def _render_tab_dashboard(estado: dict, metricas: dict) -> None:
     _render_header_universo(estado)
     _render_metricas_sprint2(metricas)
 
-    col_chart, col_table = st.columns([3, 2])
-    with col_chart:
-        st.markdown("##### Recuperados por institucion")
-        _render_stacked_bar(estado)
-    with col_table:
-        st.markdown("##### Beneficiarios a rehabilitar (PGU)")
-        _render_tabla_recuperados(estado)
+    st.markdown("##### Recuperados por institucion")
+    _render_stacked_bar(estado)
+    st.caption(
+        f"Total recuperado: {estado.get('rec_total', 0):,} casos "
+        f"distribuidos en 3 fuentes alternativas."
+    )
 
 
 def _render_tab_auditoria(estado: dict) -> None:
@@ -366,8 +336,12 @@ def _render_tab_ciudadana(estado: dict) -> None:
 
     col1, col2 = st.columns([2, 3])
     with col1:
+        primer_rut = ""
+        if df is not None and not df.empty:
+            primer_rut = df["RUT"].iloc[0]
         rut_input = st.text_input(
             "Ingrese su RUT",
+            value=primer_rut,
             max_chars=12,
             placeholder="12.345.678-5",
             help="Formato con o sin puntos. Use DV 'K' si corresponde.",
